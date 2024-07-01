@@ -224,6 +224,7 @@ def readColmapSceneInfo(path, images, eval, llffhold=10):
     txt_path = os.path.join(path, "sparse/0/points3D.txt")
     if not os.path.exists(ply_path):
         if utils.GLOBAL_RANK == 0:
+            # 当前进程是主进程，读取点云后，使用 torch.distributed.barrier() 同步所有进程
             print(
                 "Converting point3d.bin to .ply, will happen only the first time you open the scene."
             )
@@ -232,9 +233,11 @@ def readColmapSceneInfo(path, images, eval, llffhold=10):
             except:
                 xyz, rgb, _ = read_points3D_text(txt_path)
             storePly(ply_path, xyz, rgb)
+            # 进程数>1，则同步所有进程
             if utils.DEFAULT_GROUP.size() > 1:
                 torch.distributed.barrier()
         else:
+            # 当前进程不是主进程,则只同步
             if utils.DEFAULT_GROUP.size() > 1:
                 torch.distributed.barrier()
     try:

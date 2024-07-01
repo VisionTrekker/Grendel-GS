@@ -154,7 +154,7 @@ def gsplat_densification(iteration, scene, gaussians, batched_screenspace_pkg):
                         num_3dgs_after_redistribute,
                     )
                 )
-
+            # 检查显存的使用情况
             utils.check_memory_usage(
                 log_file, args, iteration, gaussians, before_densification_stop=True
             )

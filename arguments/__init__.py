@@ -251,6 +251,7 @@ def print_all_args(args, log_file):
     )
 
     # Make sure block size match between python and cuda code.
+    # 16, 16, 256
     cuda_block_x, cuda_block_y, one_dim_block_size = (
         diff_gaussian_rasterization._C.get_block_XY()
     )

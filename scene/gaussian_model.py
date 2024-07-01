@@ -415,6 +415,7 @@ class GaussianModel:
             l.append("rot_{}".format(i))
         return l
 
+    # 保存模型
     def save_ply(
         self, path
     ):  # here, we should be in torch.no_grad() context. train.py ensures that.
@@ -422,15 +423,18 @@ class GaussianModel:
         _xyz = _features_dc = _features_rest = _opacity = _scaling = _rotation = None
         utils.log_cpu_memory_usage("start save_ply")
         group = utils.DEFAULT_GROUP
+
         if args.gaussians_distribution and not args.distributed_save:
-            # gather all gaussians at rank 0
+            # 高斯体分布式训练 但 不分布式保存，则在 rank 0 进程上收集所有进程的 Gaussians 数据,然后统一保存
             def gather_uneven_tensors(tensor):
-                # gather size of tensors on different ranks
+                """
+                获取不同进程rank上 与传入tensor同类型的数据
+                """
                 tensor_sizes = torch.zeros(
                     (group.size()), dtype=torch.int, device="cuda"
                 )
                 tensor_sizes[group.rank()] = tensor.shape[0]
-                dist.all_reduce(tensor_sizes, op=dist.ReduceOp.SUM)
+                dist.all_reduce(tensor_sizes, op=dist.ReduceOp.SUM) # 计算出每个进程上该tensor的大小,并将
                 # move tensor_sizes to CPU and convert to int list
                 tensor_sizes = tensor_sizes.cpu().numpy().tolist()
 
@@ -438,12 +442,16 @@ class GaussianModel:
                 # So, I do not use dist.gather(tensor, dst=0) but use dist.send(tensor, dst=0) and dist.recv(tensor, src=i) instead.
 
                 # gather tensors on different ranks using grouped send/recv
+                # 创建一个空列表 gathered_tensors
                 gathered_tensors = []
                 if group.rank() == 0:
+                    # 在 rank 0 进程上，遍历所有进程
                     for i in range(group.size()):
                         if i == group.rank():
+                            # 如果是当前进程(rank 0)，则直接将该张量添加到 gathered_tensors 中
                             gathered_tensors.append(tensor)
                         else:
+                            # 创建一个新的张量 tensor_from_rk_i,大小与该进程的张量一致,然后使用 dist.recv() 接收该进程上的张量数据,并添加到 gathered_tensors 中
                             tensor_from_rk_i = torch.zeros(
                                 (tensor_sizes[i],) + tensor.shape[1:],
                                 dtype=tensor.dtype,
@@ -451,11 +459,12 @@ class GaussianModel:
                             )
                             dist.recv(tensor_from_rk_i, src=i)
                             gathered_tensors.append(tensor_from_rk_i)
+                    # 在 rank 0 进程上将 gathered_tensors 列表中的张量使用 torch.cat() 合并成一个整体张量
                     gathered_tensors = torch.cat(gathered_tensors, dim=0)
                 else:
                     dist.send(tensor, dst=0)
-                # concatenate gathered tensors
 
+                # 在 rank 0 进程上返回收集到的数据，其他进程返回 None
                 return (
                     gathered_tensors if group.rank() == 0 else None
                 )  # only return gather tensors at rank 0
@@ -467,10 +476,12 @@ class GaussianModel:
             _scaling = gather_uneven_tensors(self._scaling)
             _rotation = gather_uneven_tensors(self._rotation)
 
+            # 当前进程不是 rank 0,则直接 return,因为后续的保存操作只需要在 rank 0 进程上进行
             if group.rank() != 0:
                 return
 
         elif args.gaussians_distribution and args.distributed_save:
+            # 高斯体分布式训练 且 使用分布式保存（默认），每个进程都保存自己的部分数据
             assert (
                 utils.DEFAULT_GROUP.size() > 1
             ), "distributed_save should be used with more than 1 rank."
@@ -480,7 +491,7 @@ class GaussianModel:
             _opacity = self._opacity
             _scaling = self._scaling
             _rotation = self._rotation
-            if path.endswith(".ply"):
+            if path.endswith(".ply"):   # point_cloud/iteration_{}/point_cloud.ply
                 path = (
                     path[:-4]
                     + "_rk"
@@ -490,10 +501,11 @@ class GaussianModel:
                     + ".ply"
                 )
         elif not args.gaussians_distribution:
+            # 未分布式训练高斯体，则只保存rank 0 进程上的数据，其他进程的直接返回
             if group.rank() != 0:
                 return
             _xyz = self._xyz
-            _features_dc = self._features_dc
+            _features_dc = self._features_dc    # N 1 3
             _features_rest = self._features_rest
             _opacity = self._opacity
             _scaling = self._scaling
@@ -512,6 +524,7 @@ class GaussianModel:
 
         xyz = _xyz.detach().cpu().numpy()
         normals = np.zeros_like(xyz)
+        # N 1 3 ==> N 3 1 ==> N 3
         f_dc = (
             _features_dc.detach()
             .transpose(1, 2)
@@ -520,6 +533,7 @@ class GaussianModel:
             .cpu()
             .numpy()
         )
+        # N 15 3 ==> N 3 15 ==> N 45
         f_rest = (
             _features_rest.detach()
             .transpose(1, 2)
@@ -574,7 +588,7 @@ class GaussianModel:
         world_size = -1
         for f in os.listdir(folder):
             if "_ws" in f:
-                world_size = int(f.split("_ws")[1].split(".")[0])
+                world_size = int(f.split("_ws")[1].split(".")[0])   # 分GPU训练的个数（每个GPU生成一个ply）
                 break
         assert world_size > 0, "world_size should be greater than 1."
 
@@ -584,16 +598,18 @@ class GaussianModel:
         catted_opacity = []
         catted_scaling = []
         catted_rotation = []
+        # 读取多个ply
         for rk in range(world_size):
             one_checkpoint_path = (
                 folder + "/point_cloud_rk" + str(rk) + "_ws" + str(world_size) + ".ply"
             )
+            # 读取ply文件
             xyz, features_dc, features_extra, opacities, scales, rots = (
                 self.load_raw_ply(one_checkpoint_path)
             )
             catted_xyz.append(xyz)
-            catted_features_dc.append(features_dc)
-            catted_features_rest.append(features_extra)
+            catted_features_dc.append(features_dc)      # N 3 1
+            catted_features_rest.append(features_extra) # N 3 (SH_degree**2 - 1)
             catted_opacity.append(opacities)
             catted_scaling.append(scales)
             catted_rotation.append(rots)
@@ -609,12 +625,14 @@ class GaussianModel:
                 True
             )
         )
+        # N 1 3
         self._features_dc = nn.Parameter(
             torch.tensor(catted_features_dc, dtype=torch.float, device="cuda")
             .transpose(1, 2)
             .contiguous()
             .requires_grad_(True)
         )
+        # N (SH_degree**2 - 1) 3
         self._features_rest = nn.Parameter(
             torch.tensor(catted_features_rest, dtype=torch.float, device="cuda")
             .transpose(1, 2)
@@ -653,7 +671,7 @@ class GaussianModel:
         )
         opacities = np.asarray(plydata.elements[0]["opacity"])[..., np.newaxis]
 
-        features_dc = np.zeros((xyz.shape[0], 3, 1))
+        features_dc = np.zeros((xyz.shape[0], 3, 1))    # N 3 1
         features_dc[:, 0, 0] = np.asarray(plydata.elements[0]["f_dc_0"])
         features_dc[:, 1, 0] = np.asarray(plydata.elements[0]["f_dc_1"])
         features_dc[:, 2, 0] = np.asarray(plydata.elements[0]["f_dc_2"])
@@ -669,6 +687,7 @@ class GaussianModel:
         for idx, attr_name in enumerate(extra_f_names):
             features_extra[:, idx] = np.asarray(plydata.elements[0][attr_name])
         # Reshape (P,F*SH_coeffs) to (P, F, SH_coeffs except DC)
+        # N 3 (SH_coeffs - 1)
         features_extra = features_extra.reshape(
             (features_extra.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1)
         )

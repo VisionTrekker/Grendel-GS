@@ -89,6 +89,7 @@ def set_block_size(x, y, z):
 def set_img_size(h, w):
     global IMG_H, IMG_W, TILE_Y, TILE_X
     IMG_H, IMG_W = h, w
+    # 计算在x、y轴上被分成了多少个tile，其中加上 BLOCK_Y - 1 是为了确保即使图像高度不能被 BLOCK_Y 整除时，也能确保覆盖整个图像
     TILE_Y = (IMG_H + BLOCK_Y - 1) // BLOCK_Y
     TILE_X = (IMG_W + BLOCK_X - 1) // BLOCK_X
 
@@ -193,10 +194,11 @@ def check_comm_group():
 
 def init_distributed(args):
     global GLOBAL_RANK, LOCAL_RANK, WORLD_SIZE, DEFAULT_GROUP, IN_NODE_GROUP
-    GLOBAL_RANK = int(os.environ.get("RANK", 0))
-    LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))
-    WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))
+    GLOBAL_RANK = int(os.environ.get("RANK", 0))        # 进程在整个分布式环境中的rank
+    LOCAL_RANK = int(os.environ.get("LOCAL_RANK", 0))   # 进程在节点内部的rank
+    WORLD_SIZE = int(os.environ.get("WORLD_SIZE", 1))   # 整个分布式环境中的总进程数
     if WORLD_SIZE > 1:
+        # 初始化 PyTorch 的分布式训练环境,使用 "nccl" 作为通信后端
         torch.distributed.init_process_group(
             "nccl", rank=GLOBAL_RANK, world_size=WORLD_SIZE
         )
@@ -205,17 +207,21 @@ def init_distributed(args):
             torch.distributed.is_initialized()
         ), "Distributed mode requires init_distributed() to be called first"
 
-        DEFAULT_GROUP = dist.group.WORLD
+        DEFAULT_GROUP = dist.group.WORLD    # 设置 DEFAULT_GROUP 为整个分布式环境的 WORLD 组
 
-        num_gpu_per_node = one_node_device_count()
-        n_of_nodes = WORLD_SIZE // num_gpu_per_node
+        # 创建节点内部的进程组 IN_NODE_GROUP
+        num_gpu_per_node = one_node_device_count()  # 计算每个节点上可用的 GPU 个数（1）
+        n_of_nodes = WORLD_SIZE // num_gpu_per_node # 总节点数
         all_in_node_group = []
+        # 遍历每个节点,创建该节点内部的进程组
         for rank in range(n_of_nodes):
             in_node_group_ranks = list(
                 range(rank * num_gpu_per_node, (rank + 1) * num_gpu_per_node)
             )
             all_in_node_group.append(dist.new_group(in_node_group_ranks))
+        # 根据当前进程的 GLOBAL_RANK 确定当前进程所在的节点
         node_rank = GLOBAL_RANK // num_gpu_per_node
+        # 该节点内部的进程组
         IN_NODE_GROUP = all_in_node_group[node_rank]
         print(
             "Initializing -> "
@@ -301,12 +307,15 @@ def check_initial_gpu_memory_usage(prefix):
 
 
 def check_memory_usage(log_file, args, iteration, gaussians, before_densification_stop):
+    """
+        before_densification_stop: 在densification中调用时，被设为 True
+    """
     global DEFAULT_GROUP
 
-    memory_usage = torch.cuda.memory_allocated() / 1024 / 1024 / 1024
-    max_memory_usage = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024
-    max_reserved_memory = torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024
-    now_reserved_memory = torch.cuda.memory_reserved() / 1024 / 1024 / 1024
+    memory_usage = torch.cuda.memory_allocated() / 1024 / 1024 / 1024   # 当前分配的 GPU 内存 (单位: GB)
+    max_memory_usage = torch.cuda.max_memory_allocated() / 1024 / 1024 / 1024   # 最大分配的 GPU 内存 (单位: GB)
+    max_reserved_memory = torch.cuda.max_memory_reserved() / 1024 / 1024 / 1024 # 最大预留的 GPU 内存 (单位: GB)
+    now_reserved_memory = torch.cuda.memory_reserved() / 1024 / 1024 / 1024     # 当前预留的 GPU 内存 (单位: GB)
     log_str = ""
     log_str += "iteration[{},{}) {}Now num of 3dgs: {}. Now Memory usage: {} GB. Max Memory usage: {} GB. Max Reserved Memory: {} GB. Now Reserved Memory: {} GB. \n".format(
         iteration,
@@ -320,7 +329,7 @@ def check_memory_usage(log_file, args, iteration, gaussians, before_densificatio
     )
     if args.log_memory_summary:
         log_str += "Memory Summary: {} GB \n".format(torch.cuda.memory_summary())
-
+    # 该参数默认为False，所有默认在日志中打印该信息
     if args.check_gpu_memory:
         log_file.write(log_str)
 

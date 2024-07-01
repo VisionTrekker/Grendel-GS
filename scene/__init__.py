@@ -28,8 +28,11 @@ class Scene:
     def __init__(
         self, args, gaussians: GaussianModel, load_iteration=None, shuffle=True
     ):
-        """b
-        :param path: Path to colmap scene main folder.
+        """
+            args:
+            gaussians:
+            load_iteration: 训练时为 None，render时为 指定的iteration
+            shuffle: 训练时为 True，render时为 False
         """
         self.model_path = args.model_path
         self.loaded_iter = None
@@ -37,6 +40,7 @@ class Scene:
         log_file = utils.get_log_file()
 
         if load_iteration:
+            # 设置要加载的 指定的迭代次数的 结果
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(
                     os.path.join(self.model_path, "point_cloud")
@@ -49,11 +53,11 @@ class Scene:
 
         if os.path.exists(
             os.path.join(args.source_path, "sparse")
-        ):  # This is the format from colmap.
+        ):  # Colmap格式的数据集
             scene_info = sceneLoadTypeCallbacks["Colmap"](
                 args.source_path, args.images, args.eval, args.llffhold
             )
-        elif "matrixcity" in args.source_path:  # This is for matrixcity
+        elif "matrixcity" in args.source_path:  # Matrixcity格式的数据集
             scene_info = sceneLoadTypeCallbacks["City"](
                 args.source_path,
                 args.random_background,
@@ -61,8 +65,11 @@ class Scene:
                 llffhold=args.llffhold,
             )
         else:
-            raise ValueError("No valid dataset found in the source path")
+            raise ValueError("No valid dataset found in the source path. {}".format(os.path.join(args.source_path, "sparse")))
 
+        # 未加载模型，则：
+        # 1. 将点云文件point3D.ply文件复制到input.ply文件
+        # 2. 将相机参数写入cameras.json文件
         if not self.loaded_iter:
             with open(scene_info.ply_path, "rb") as src_file, open(
                 os.path.join(self.model_path, "input.ply"), "wb"
@@ -79,6 +86,7 @@ class Scene:
             with open(os.path.join(self.model_path, "cameras.json"), "w") as file:
                 json.dump(json_cams, file)
 
+        # 随机打乱训练和测试相机
         if shuffle:
             random.shuffle(
                 scene_info.train_cameras
@@ -92,12 +100,14 @@ class Scene:
         self.cameras_extent = scene_info.nerf_normalization["radius"]
 
         # Set image size to global variable
+        # 将图片的原size设置为全局变量
         orig_w, orig_h = (
             scene_info.train_cameras[0].width,
             scene_info.train_cameras[0].height,
         )
         utils.set_img_size(orig_h, orig_w)
-        # Dataset size in GB
+
+        # 计算数据集的总大小（单位为GB）
         dataset_size_in_GB = (
             1.0
             * (len(scene_info.train_cameras) + len(scene_info.test_cameras))
@@ -108,8 +118,9 @@ class Scene:
         )
         log_file.write(f"Dataset size: {dataset_size_in_GB} GB\n")
         if (
-            dataset_size_in_GB < args.preload_dataset_to_gpu_threshold
+                dataset_size_in_GB < args.preload_dataset_to_gpu_threshold
         ):  # 10GB memory limit for dataset
+            # 数据集大小 < 预加载数据集到GPU的阈值，则预加载数据集到GPU
             log_file.write(
                 f"[NOTE]: Preloading dataset({dataset_size_in_GB}GB) to GPU. Disable local_sampling and distributed_dataset_storage.\n"
             )
@@ -121,15 +132,20 @@ class Scene:
             args.distributed_dataset_storage = False
 
         # Train on original resolution, no downsampling in our implementation.
+        # 加载train相机，并使用原始图像分辨率进行训练
         utils.print_rank_0("Decoding Training Cameras")
         self.train_cameras = None
         self.test_cameras = None
         if args.num_train_cameras >= 0:
+            # 预设了训练相机个数的上限，则仅加载预设数量的训练相机
             train_cameras = scene_info.train_cameras[: args.num_train_cameras]
         else:
+            # 未预设上限，则加载全部的
             train_cameras = scene_info.train_cameras
+
         self.train_cameras = cameraList_from_camInfos(train_cameras, args)
         # output the number of cameras in the training set and image size to the log file
+        # 打印训练相机的个数 和 图像尺寸到log文件中
         log_file.write(
             "Number of local training cameras: {}\n".format(len(self.train_cameras))
         )
@@ -141,6 +157,7 @@ class Scene:
                 )
             )
 
+        # 加载test相机
         if args.eval:
             utils.print_rank_0("Decoding Test Cameras")
             if args.num_test_cameras >= 0:
@@ -160,16 +177,19 @@ class Scene:
                     )
                 )
 
+        # 检查GPU显存 和 CPU内存的 初始使用情况
         utils.check_initial_gpu_memory_usage("after Loading all images")
         utils.log_cpu_memory_usage("after decoding images")
 
         if self.loaded_iter:
+            # 加载指定迭代次数的点云
             self.gaussians.load_ply(
                 os.path.join(
                     self.model_path, "point_cloud", "iteration_" + str(self.loaded_iter)
                 )
             )
         elif hasattr(args, "load_ply_path"):
+            # 检查 args 对象是否有 "load_ply_path" 属性，如果有则读取
             self.gaussians.load_ply(args.load_ply_path)
         else:
             self.gaussians.create_from_pcd(scene_info.point_cloud, self.cameras_extent)
