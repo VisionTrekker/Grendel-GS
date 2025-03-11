@@ -97,7 +97,7 @@ def training(dataset_args, opt_args, pipe_args, args, log_file):
     ):
         # Step Initialization
         if iteration // args.bsz % 30 == 0:
-            progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}"})
+            progress_bar.set_postfix({"Loss": f"{ema_loss_for_log:.{7}f}", "points": f"{gaussians.get_xyz.shape[0]}"})
         progress_bar.update(args.bsz)
         utils.set_cur_iter(iteration)
         gaussians.update_learning_rate(iteration)
@@ -368,11 +368,11 @@ def training_report(
         utils.print_rank_0("\n[ITER {}] Start Testing".format(iteration))
 
         validation_configs = (
-            {"name": "test", "cameras": scene.getTestCameras(), "num_cameras": len(scene.getTestCameras())},
+            {"name": "test", "cameras": scene.getTestCameras(), "num_cameras": len(scene.getTestCameras()) if scene.getTestCameras() is not None else 0},
             {
                 "name": "train",
-                "cameras": scene.getTrainCameras(),
-                "num_cameras": max(len(scene.getTrainCameras()) // args.llffhold, args.bsz),
+                "cameras": [scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)],
+                "num_cameras": max(len([scene.getTrainCameras()[idx % len(scene.getTrainCameras())] for idx in range(5, 30, 5)]), args.bsz),
             },
         )
 

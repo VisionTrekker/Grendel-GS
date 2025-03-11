@@ -58,9 +58,7 @@ class GaussianModel:
         self._rotation = torch.empty(0)
         self._opacity = torch.empty(0)
         self.max_radii2D = torch.empty(0)
-        self.xyz_gradient_accum = torch.empty(
-            0
-        )  # TODO: deal with self.send_to_gpui_cnt
+        self.xyz_gradient_accum = torch.empty(0)  # TODO: deal with self.send_to_gpui_cn
         self.denom = torch.empty(0)
         self.optimizer = None
         self.percent_dense = 0
@@ -1043,15 +1041,9 @@ class GaussianModel:
     def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
         args = utils.get_args()
         if not args.gaussians_distribution and utils.DEFAULT_GROUP.size() > 1:
-            torch.distributed.all_reduce(
-                self.max_radii2D, op=dist.ReduceOp.MAX, group=utils.DP_GROUP
-            )
-            torch.distributed.all_reduce(
-                self.xyz_gradient_accum, op=dist.ReduceOp.SUM, group=utils.DP_GROUP
-            )
-            torch.distributed.all_reduce(
-                self.denom, op=dist.ReduceOp.SUM, group=utils.DP_GROUP
-            )
+            torch.distributed.all_reduce(self.max_radii2D, op=dist.ReduceOp.MAX, group=utils.DP_GROUP)
+            torch.distributed.all_reduce(self.xyz_gradient_accum, op=dist.ReduceOp.SUM, group=utils.DP_GROUP)
+            torch.distributed.all_reduce(self.denom, op=dist.ReduceOp.SUM, group=utils.DP_GROUP)
 
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
@@ -1081,12 +1073,8 @@ class GaussianModel:
 
         torch.cuda.empty_cache()
 
-    def add_densification_stats(
-        self, viewspace_point_tensor, update_filter
-    ):  # the :2] is a weird implementation. It is because viewspace_point_tensor is (N, 3) tensor.
-        self.xyz_gradient_accum[update_filter] += torch.norm(
-            viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True
-        )
+    def add_densification_stats(self, viewspace_point_tensor, update_filter):  # the :2] is a weird implementation. It is because viewspace_point_tensor is (N, 3) tensor.
+        self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
     def gsplat_add_densification_stats(
@@ -1096,9 +1084,7 @@ class GaussianModel:
         # Normalize the gradients to [-1, 1] screen size
         grad[:, 0] *= width * 0.5
         grad[:, 1] *= height * 0.5
-        self.xyz_gradient_accum[update_filter] += torch.norm(
-            grad[update_filter, :2], dim=-1, keepdim=True
-        )
+        self.xyz_gradient_accum[update_filter] += torch.norm(grad[update_filter, :2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
 
     def group_for_redistribution(self):

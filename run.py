@@ -3,10 +3,10 @@ import os
 print('---------------------------------------------------------------------------------')
 cmd = f'torchrun --standalone --nnodes=1 --nproc-per-node=4 train.py \
 	--bsz 4 \
-	--images images_4 -r 1 \
+	--images images_4 \
 	--eval --llffhold 83 \
 	-s /data2/jtx/data/rubble \
-	-m output/rubble_4_2 \
+	-m output/rubble_4_2_test \
 	--iterations 200000 \
 	--densify_from_iter 1000 \
 	--densify_until_iter 50000 \
@@ -17,8 +17,8 @@ cmd = f'torchrun --standalone --nnodes=1 --nproc-per-node=4 train.py \
 	--test_iterations 7000 30000 50000 80000 110000 120000 140000 160000 180000 200000 \
 	--save_iterations 30000 50000 120000 200000 \
 	--checkpoint_iterations 50000 120000 200000'
-#print(cmd)
-#os.system(cmd)
+# print(cmd)
+# os.system(cmd)
 
 print('---------------------------------------------------------------------------------')
 cmd = f'python render.py -m output/rubble_4_2 --iteration 119997 --skip_train --llffhold 83'
@@ -108,31 +108,65 @@ cmd = f'CUDA_VISIBLE_DEVICES=3 python metrics.py -m output/matrixcity_ --mode te
 
 
 
-
+# --densify_grad_threshold: 0.0002
+# --percent_dense: 0.01
+# /data2/liuzhi/Dataset/3DGS_Dataset/siyue
 print('---------------------------------------------------------------------------------')
-cmd = f'torchrun --standalone --nnodes=1 --nproc-per-node=4 train.py \
-	--bsz 1 \
+cmd = f'CUDA_VISIBLE_DEVICES=2 python train.py \
 	--images images \
-	-s /data2/liuzhi/Dataset/3DGS_Dataset/siyue \
-	-m output/siyue \
-	--iterations 200_000 \
-	--densify_from_iter 2000 \
-	--densify_until_iter 100_000 \
-	--densification_interval 400 \
+	-s /data2/liuzhi/remote_data/dataset_reality/siyue/0909_airfull \
+	-m output/0909_airfull \
+	--iterations 60_000 \
+	--densify_from_iter 1000 \
+	--densify_until_iter 30000 \
+	--densification_interval 200 \
 	--densify_grad_threshold 0.0002 \
 	--percent_dense 0.01 \
-	--opacity_reset_interval 9000 \
-	--test_iterations 30000 80000 130000 180000 200000 \
-	--save_iterations 80000 130000 200000'
+	--opacity_reset_interval 6000 \
+	--test_iterations 7000 15000 30000 60000 \
+	--save_iterations 15000 30000 60000'
 print(cmd)
 os.system(cmd)
 
-print('---------------------------------------------------------------------------------')
-cmd = f'CUDA_VISIBLE_DEVICES=3 python render.py -m output/matrixcity_ --iteration 119997 --skip_train --eval'
+# print('---------------------------------------------------------------------------------')
+# cmd = f'CUDA_VISIBLE_DEVICES=3 python render.py -m output/siyue_newsparse_0.00005_0.001 --iteration 299993 --skip_train --skip_test'
 # print(cmd)
 # os.system(cmd)
 
 print('---------------------------------------------------------------------------------')
-cmd = f'CUDA_VISIBLE_DEVICES=3 python metrics.py -m output/matrixcity_ --mode test'
+# cmd = f'CUDA_VISIBLE_DEVICES=1,2 torchrun --standalone --nnodes=1 --nproc-per-node=2 train.py \
+# 	--bsz 4 \
+# 	--images images \
+# 	-s /data2/liuzhi/remote_data/dataset_reality/hnsf_1517 \
+# 	-m output/henanshifan \
+# 	--iterations 30_000 \
+# 	--densify_from_iter 500 \
+# 	--densify_until_iter 150_00 \
+# 	--densification_interval 100 \
+# 	--densify_grad_threshold 0.0002 \
+# 	--percent_dense 0.01 \
+# 	--opacity_reset_interval 3000 \
+# 	--test_iterations 7000 15000 30000\
+# 	--save_iterations 7000 30000'
+# print(cmd)
+# os.system(cmd)
+# cmd = f'CUDA_VISIBLE_DEVICES=2 python train.py \
+# 	--images images \
+# 	-s /data2/liuzhi/remote_data/dataset_reality/hnsf_1517 \
+# 	-m output/henanshifan \
+# 	--iterations 30_000 \
+# 	--densify_from_iter 500 \
+# 	--densify_until_iter 150_00 \
+# 	--densification_interval 100 \
+# 	--densify_grad_threshold 0.0002 \
+# 	--percent_dense 0.01 \
+# 	--opacity_reset_interval 3000 \
+# 	--test_iterations 7000 15000 30000\
+# 	--save_iterations 15000 30000'
+# print(cmd)
+# os.system(cmd)
+
+# print('---------------------------------------------------------------------------------')
+# cmd = f'CUDA_VISIBLE_DEVICES=3 python render.py -m output/siyue_fukan_0904 --iteration 29997 --skip_train --skip_test'
 # print(cmd)
 # os.system(cmd)

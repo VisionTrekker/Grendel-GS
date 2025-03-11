@@ -124,6 +124,11 @@ class OptimizationParams(ParamGroup):
         self.densify_from_iter = 500
         self.densify_until_iter = 15_000
         self.densify_grad_threshold = 0.0002
+        self.densify_grad_abs_threshold = 0.0004
+
+        self.use_reduce = True
+        self.opacity_reduce_interval = 500  # remove floater
+
         self.densify_memory_limit_percentage = 0.9
         self.disable_auto_densification = False
         self.opacity_reset_until_iter = -1
